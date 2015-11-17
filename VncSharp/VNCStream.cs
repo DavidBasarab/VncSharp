@@ -16,7 +16,7 @@ namespace VncSharp
         private readonly string _password;
         private readonly ushort _port;
         private Rectangle _frameDimensions = new Rectangle(0, 0, 1, 1);
-        private VncClient _vncClient;
+        private VncClientWithImage _vncClient;
 
         public Rectangle FrameDimensions
         {
@@ -43,7 +43,7 @@ namespace VncSharp
 
         public void Connect()
         {
-            _vncClient = new VncClient();
+            _vncClient = new VncClientWithImage();
 
             var needToAutenticate = _vncClient.Connect(_ipAddress, 0, _port, true);
 
@@ -55,8 +55,18 @@ namespace VncSharp
 
             AllocateFrameImage();
 
-            _vncClient.VncUpdate += OnFrameUpdated;
+            //_vncClient.VncUpdate += OnFrameUpdated;
+            _vncClient.ImageUpdated += OnImageUpdated;
             _vncClient.StartUpdates();
+        }
+
+        private void OnImageUpdated(Bitmap latestframe)
+        {
+            LatestFrame = latestframe;
+
+            OnVncFrameReceived();
+
+            _vncClient.RequestScreenUpdate(false);
         }
 
         protected void OnVncFrameReceived()

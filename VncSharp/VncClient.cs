@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -16,11 +17,65 @@ namespace VncSharp
     /// </summary>
     public delegate void VncUpdateHandler(object sender, VncEventArgs e);
 
+    public delegate void VncImageUpdated(Bitmap latestFrame);
+
+    public class VncClientWithImage : VncClient
+    {
+        public Bitmap Frame { get; set; }
+
+        public event VncImageUpdated ImageUpdated;
+
+        public override void Initialize()
+        {
+            base.Initialize();
+
+            Frame = new Bitmap(Framebuffer.Width, Framebuffer.Height, PixelFormat.Format32bppArgb);
+        }
+
+        protected override void ProcessFrameBufferUpdate()
+        {
+            var rectangles = rfb.ReadFramebufferUpdate();
+
+            if (CheckIfThreadDone()) return;
+
+            for (var i = 0; i < rectangles; ++i)
+            {
+                // Get the update rectangle's info
+                Rectangle rectangle;
+                int enc;
+                rfb.ReadFramebufferUpdateRectHeader(out rectangle, out enc);
+
+                // Build a derived EncodedRectangle type and pull-down all the pixel info
+                var er = factory.Build(rectangle, enc);
+                er.Decode();
+
+                er.Order = i;
+
+                er.Draw(Frame);
+            }
+
+            // Let the UI know that an updated rectangle is available, but check
+            // to see if the user closed things down first.
+            if (!CheckIfThreadDone())
+            {
+                OnImageUpdated(Frame);
+            }
+        }
+
+        protected virtual void OnImageUpdated(Bitmap latestframe)
+        {
+            // Maybe copy the image?  Ideally send out the bytes of the image?
+
+            var handler = ImageUpdated;
+            if (handler != null) handler(latestframe);
+        }
+    }
+
     public class VncClient
     {
-        private RfbProtocol rfb; // The protocol object handling all communication with server.
+        protected RfbProtocol rfb; // The protocol object handling all communication with server.
         private byte securityType; // The type of Security agreed upon by client/server
-        private EncodedRectangleFactory factory;
+        protected EncodedRectangleFactory factory;
         private Thread worker; // To request and read in-coming updates from server
         private ManualResetEvent done; // Used to tell the worker thread to die cleanly
         private IVncInputPolicy inputPolicy; // A mouse/keyboard input strategy
@@ -288,7 +343,7 @@ namespace VncSharp
         /// <summary>
         ///     Finish setting-up protocol with VNC Host.  Should be called after Connect and Authenticate (if password required).
         /// </summary>
-        public void Initialize()
+        public virtual void Initialize()
         {
             // Finish initializing protocol with host
             rfb.WriteClientInitialisation(false);
@@ -356,7 +411,7 @@ namespace VncSharp
         /// </summary>
         public event VncUpdateHandler VncUpdate;
 
-        private bool CheckIfThreadDone()
+        protected bool CheckIfThreadDone()
         {
             return done.WaitOne(0, false);
         }
@@ -366,9 +421,6 @@ namespace VncSharp
         /// </summary>
         private void GetRfbUpdates()
         {
-            int rectangles;
-            int enc;
-
             // Get the initial destkop from the host
             RequestScreenUpdate(true);
 
@@ -381,48 +433,8 @@ namespace VncSharp
                     switch (rfb.ReadServerMessageType())
                     {
                         case RfbProtocol.FRAMEBUFFER_UPDATE:
-                            rectangles = rfb.ReadFramebufferUpdate();
+                            ProcessFrameBufferUpdate();
 
-                            if (CheckIfThreadDone()) break;
-
-                            var encodedRectangles = new List<EncodedRectangle>(rectangles);
-
-                            for (var i = 0; i < rectangles; ++i)
-                            {
-                                // Get the update rectangle's info
-                                Rectangle rectangle;
-                                rfb.ReadFramebufferUpdateRectHeader(out rectangle, out enc);
-
-                                // Build a derived EncodedRectangle type and pull-down all the pixel info
-                                var er = factory.Build(rectangle, enc);
-                                er.Decode();
-
-                                er.Order = i;
-
-                                encodedRectangles.Add(er);
-                            }
-
-                            // Let the UI know that an updated rectangle is available, but check
-                            // to see if the user closed things down first.
-                            if (!CheckIfThreadDone() && VncUpdate != null)
-                            {
-                                var vncEventArgs = new VncEventArgs();
-
-                                foreach (var encodedRectangle in encodedRectangles) vncEventArgs.DesktopUpdates.Add(encodedRectangle);
-
-                                // In order to play nicely with WinForms controls, we do a check here to 
-                                // see if it is necessary to synchronize this event with the UI thread.
-                                if (VncUpdate.Target is Control)
-                                {
-                                    var target = VncUpdate.Target as Control;
-                                    if (target != null) target.Invoke(VncUpdate, this, vncEventArgs);
-                                }
-                                else
-
-                                // Target is not a WinForms control, so do it on this thread...
-                                    VncUpdate(this, vncEventArgs);
-                            }
-                            
                             break;
                         case RfbProtocol.BELL:
                             Beep(500, 300); // TODO: are there better values than these?
@@ -442,6 +454,52 @@ namespace VncSharp
                 catch
                 {
                     OnConnectionLost();
+                }
+            }
+        }
+
+        protected virtual void ProcessFrameBufferUpdate()
+        {
+            var rectangles = rfb.ReadFramebufferUpdate();
+
+            if (CheckIfThreadDone()) return;
+
+            for (var i = 0; i < rectangles; ++i)
+            {
+                var encodedRectangles = new List<EncodedRectangle>(rectangles);
+
+                // Get the update rectangle's info
+                Rectangle rectangle;
+                int enc;
+                rfb.ReadFramebufferUpdateRectHeader(out rectangle, out enc);
+
+                // Build a derived EncodedRectangle type and pull-down all the pixel info
+                var er = factory.Build(rectangle, enc);
+                er.Decode();
+
+                er.Order = i;
+
+                encodedRectangles.Add(er);
+
+                // Let the UI know that an updated rectangle is available, but check
+                // to see if the user closed things down first.
+                if (!CheckIfThreadDone() && VncUpdate != null)
+                {
+                    var vncEventArgs = new VncEventArgs();
+
+                    foreach (var encodedRectangle in encodedRectangles) vncEventArgs.DesktopUpdates.Add(encodedRectangle);
+
+                    // In order to play nicely with WinForms controls, we do a check here to 
+                    // see if it is necessary to synchronize this event with the UI thread.
+                    if (VncUpdate.Target is Control)
+                    {
+                        var target = VncUpdate.Target as Control;
+                        if (target != null) target.Invoke(VncUpdate, this, vncEventArgs);
+                    }
+                    else
+
+                    // Target is not a WinForms control, so do it on this thread...
+                        VncUpdate(this, vncEventArgs);
                 }
             }
         }
