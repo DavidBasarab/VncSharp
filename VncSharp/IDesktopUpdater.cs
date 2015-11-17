@@ -7,6 +7,8 @@ namespace VncSharp
     /// </summary>
     public interface IDesktopUpdater
     {
+        int Order { get; set; }
+
         /// <summary>
         ///     The region of the desktop Bitmap that needs to be re-drawn.
         /// </summary>

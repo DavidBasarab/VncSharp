@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Linq;
 using System.Security.Authentication;
 
 namespace VncSharp
@@ -68,16 +69,10 @@ namespace VncSharp
         private void AllocateFrameImage()
         {
             if (FrameDimensions.Width < 100 || FrameDimensions.Height < 100)
-            {
-                //throw new InvalidOperationException("FrameDimension is invalid.");
-                LatestFrame = new Bitmap(1920, 1080, PixelFormat.Format32bppArgb);
-            }
-            else
-            {
-                LatestFrame = new Bitmap(FrameDimensions.Width, FrameDimensions.Height, PixelFormat.Format32bppArgb);
-            }
 
-
+                throw new InvalidOperationException("FrameDimension is invalid.");
+                //LatestFrame = new Bitmap(1920, 1080, PixelFormat.Format32bppArgb);
+            else LatestFrame = new Bitmap(FrameDimensions.Width, FrameDimensions.Height, PixelFormat.Format32bppArgb);
         }
 
         private void OnFrameUpdated(object sender, VncEventArgs e)
@@ -86,7 +81,7 @@ namespace VncSharp
             {
                 lock (_lockObject)
                 {
-                    e.DesktopUpdater.Draw(LatestFrame);
+                    foreach (var deskotpUpdate in e.DesktopUpdates.OrderBy(i => i.Order).ToList()) deskotpUpdate.Draw(LatestFrame);
 
                     OnVncFrameReceived();
                 }

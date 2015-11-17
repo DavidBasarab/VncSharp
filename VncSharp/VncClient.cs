@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
@@ -6,6 +7,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
+using VncSharp.Encodings;
 
 namespace VncSharp
 {
@@ -111,11 +113,10 @@ namespace VncSharp
                 if (types.Length > 0)
                 {
                     if (types[0] == 0)
-                    {
-                        // The server is not able (or willing) to accept the connection.
-                        // A message follows indicating why the connection was dropped.
+
+                            // The server is not able (or willing) to accept the connection.
+                            // A message follows indicating why the connection was dropped.
                         throw new VncProtocolException("Connection Failed. The server rejected the connection for the following reason: " + rfb.ReadSecurityFailureReason());
-                    }
                     securityType = GetSupportedSecurityType(types);
                     Debug.Assert(securityType > 0, "Unknown Security Type(s)", "The server sent one or more unknown Security Types.");
 
@@ -123,18 +124,16 @@ namespace VncSharp
 
                     // Protocol 3.8 states that a SecurityResult is still sent when using NONE (see 6.2.1)
                     if (rfb.ServerVersion == 3.8f && securityType == 1)
-                    {
                         if (rfb.ReadSecurityResult() > 0)
-                        {
-                            // For some reason, the server is not accepting the connection.  Get the
-                            // reason and throw an exception
+
+                                // For some reason, the server is not accepting the connection.  Get the
+                                // reason and throw an exception
                             throw new VncProtocolException("Unable to Connecto to the Server. The Server rejected the connection for the following reason: " +
                                                            rfb.ReadSecurityFailureReason());
-                        }
-                    }
 
-                    return (securityType > 1) ? true : false;
+                    return securityType > 1 ? true : false;
                 }
+
                 // Something is wrong, since we should have gotten at least 1 Security Type
                 throw new VncProtocolException("Protocol Error Connecting to Server. The Server didn't send any Security Types during the initial handshake.");
             }
@@ -189,7 +188,6 @@ namespace VncSharp
             // Pick the first match in the list of given types.  If you want to add support for new
             // security types, do it here:
             for (var i = 0; i < types.Length; ++i)
-            {
                 if (types[i] == 1 // None
                     || types[i] == 2 // VNC Authentication
                         // TODO: None of the following are currently supported -------------------
@@ -199,7 +197,6 @@ namespace VncSharp
                         //					|| types[i] == 17 	// Ultra
                         //					|| types[i] == 18 	// TLS
                         ) return types[i];
-            }
             return 0;
         }
 
@@ -221,6 +218,7 @@ namespace VncSharp
             else throw new NotSupportedException("Unable to Authenticate with Server. The Server uses an Authentication scheme unknown to the client.");
 
             if (rfb.ReadSecurityResult() == 0) return true;
+
             // Authentication failed, and if the server is using Protocol version 3.8, a 
             // plain text message follows indicating why the error happend.  I'm not 
             // currently using this message, but it is read here to clean out the stream.
@@ -265,7 +263,6 @@ namespace VncSharp
 
             // VNC uses reverse byte order in key
             for (var i = 0; i < 8; i++)
-            {
                 key[i] = (byte)(((key[i] & 0x01) << 7) |
                                 ((key[i] & 0x02) << 5) |
                                 ((key[i] & 0x04) << 3) |
@@ -274,7 +271,6 @@ namespace VncSharp
                                 ((key[i] & 0x20) >> 3) |
                                 ((key[i] & 0x40) >> 5) |
                                 ((key[i] & 0x80) >> 7));
-            }
 
             // VNC uses DES, not 3DES as written in some documentation
             DES des = new DESCryptoServiceProvider();
@@ -303,6 +299,7 @@ namespace VncSharp
                                   {
                                           RfbProtocol.ZRLE_ENCODING,
                                           RfbProtocol.HEXTILE_ENCODING,
+
                                           //	RfbProtocol.CORRE_ENCODING, // CoRRE is buggy in some hosts, so don't bother using
                                           RfbProtocol.RRE_ENCODING,
                                           RfbProtocol.COPYRECT_ENCODING,
@@ -320,6 +317,7 @@ namespace VncSharp
         {
             // Start getting updates on background thread.
             worker = new Thread(GetRfbUpdates);
+
             // Bug Fix (Grégoire Pailler) for clipboard and threading
             worker.SetApartmentState(ApartmentState.STA);
             worker.IsBackground = true;
@@ -387,7 +385,8 @@ namespace VncSharp
 
                             if (CheckIfThreadDone()) break;
 
-                            // TODO: consider gathering all update rectangles in a batch and *then* posting the event back to the main thread.
+                            var encodedRectangles = new List<EncodedRectangle>(rectangles);
+
                             for (var i = 0; i < rectangles; ++i)
                             {
                                 // Get the update rectangle's info
@@ -398,32 +397,39 @@ namespace VncSharp
                                 var er = factory.Build(rectangle, enc);
                                 er.Decode();
 
-                                // Let the UI know that an updated rectangle is available, but check
-                                // to see if the user closed things down first.
-                                if (!CheckIfThreadDone() && VncUpdate != null)
-                                {
-                                    var e = new VncEventArgs(er);
+                                er.Order = i;
 
-                                    // In order to play nicely with WinForms controls, we do a check here to 
-                                    // see if it is necessary to synchronize this event with the UI thread.
-                                    if (VncUpdate.Target is Control)
-                                    {
-                                        var target = VncUpdate.Target as Control;
-                                        if (target != null) target.Invoke(VncUpdate, this, e);
-                                    }
-                                    else
-                                    {
-                                        // Target is not a WinForms control, so do it on this thread...
-                                        VncUpdate(this, new VncEventArgs(er));
-                                    }
-                                }
+                                encodedRectangles.Add(er);
                             }
+
+                            // Let the UI know that an updated rectangle is available, but check
+                            // to see if the user closed things down first.
+                            if (!CheckIfThreadDone() && VncUpdate != null)
+                            {
+                                var vncEventArgs = new VncEventArgs();
+
+                                foreach (var encodedRectangle in encodedRectangles) vncEventArgs.DesktopUpdates.Add(encodedRectangle);
+
+                                // In order to play nicely with WinForms controls, we do a check here to 
+                                // see if it is necessary to synchronize this event with the UI thread.
+                                if (VncUpdate.Target is Control)
+                                {
+                                    var target = VncUpdate.Target as Control;
+                                    if (target != null) target.Invoke(VncUpdate, this, vncEventArgs);
+                                }
+                                else
+
+                                // Target is not a WinForms control, so do it on this thread...
+                                    VncUpdate(this, vncEventArgs);
+                            }
+                            
                             break;
                         case RfbProtocol.BELL:
                             Beep(500, 300); // TODO: are there better values than these?
                             break;
                         case RfbProtocol.SERVER_CUT_TEXT:
                             if (CheckIfThreadDone()) break;
+
                             // TODO: This is invasive, should there be a bool property allowing this message to be ignored?
                             Clipboard.SetDataObject(rfb.ReadServerCutText().Replace("\n", Environment.NewLine), true);
                             OnServerCutText();

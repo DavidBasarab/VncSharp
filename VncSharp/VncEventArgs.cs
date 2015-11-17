@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace VncSharp
 {
@@ -7,11 +8,16 @@ namespace VncSharp
         /// <summary>
         ///     Gets the IDesktopUpdater object that will handling re-drawing the desktop.
         /// </summary>
-        public IDesktopUpdater DesktopUpdater { get; private set; }
+        public List<IDesktopUpdater> DesktopUpdates { get; private set; }
 
-        public VncEventArgs(IDesktopUpdater updater)
+        public VncEventArgs()
         {
-            DesktopUpdater = updater;
+            DesktopUpdates = new List<IDesktopUpdater>();
+        }
+
+        public VncEventArgs(List<IDesktopUpdater> updates)
+        {
+            DesktopUpdates = updates;
         }
     }
 }

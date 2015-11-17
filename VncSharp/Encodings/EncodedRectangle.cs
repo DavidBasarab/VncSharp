@@ -22,6 +22,8 @@ namespace VncSharp.Encodings
             get { return rectangle; }
         }
 
+        public int Order { get; set; }
+
         public EncodedRectangle(RfbProtocol rfb, Framebuffer framebuffer, Rectangle rectangle, int encoding)
         {
             this.rfb = rfb;

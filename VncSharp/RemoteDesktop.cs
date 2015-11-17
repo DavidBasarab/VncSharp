@@ -940,9 +940,13 @@ namespace VncSharp
         // The VncClient object handles thread marshalling onto the UI thread.
         protected void VncUpdate(object sender, VncEventArgs e)
         {
-            e.DesktopUpdater.Draw(desktop);
-            Invalidate(desktopPolicy.AdjustUpdateRectangle(e.DesktopUpdater.UpdateRectangle));
+            foreach (var desktopUpdate in e.DesktopUpdates)
+            {
+                desktopUpdate.Draw(desktop);
 
+                Invalidate(desktopPolicy.AdjustUpdateRectangle(desktopUpdate.UpdateRectangle));
+            }
+            
             if (state == RuntimeState.Connected)
             {
                 vnc.RequestScreenUpdate(fullScreenRefresh);
