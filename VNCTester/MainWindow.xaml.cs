@@ -17,7 +17,7 @@ namespace VNCTester
         [DllImport("gdi32")]
         private static extern int DeleteObject(IntPtr o);
 
-        public VncStream VncStream { get; set; }
+        public VncImageStream VncImageStream { get; set; }
 
         public MainWindow()
         {
@@ -59,11 +59,11 @@ namespace VNCTester
                      {
                          try
                          {
-                             VncStream = new VncStream(serverName, port, password);
+                             VncImageStream = new VncImageStream(serverName, port, password);
 
-                             VncStream.VncFrameReceived += OnVncFrameRecieved;
+                             VncImageStream.VncFrameReceived += OnVncFrameRecieved;
 
-                             VncStream.Connect();
+                             VncImageStream.Connect();
                          }
                          catch (Exception ex)
                          {

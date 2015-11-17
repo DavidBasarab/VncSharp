@@ -1,14 +1,13 @@
 ﻿using System;
 using System.Drawing;
 using System.Drawing.Imaging;
-using System.Linq;
 using System.Security.Authentication;
 
 namespace VncSharp
 {
     public delegate void VncFrameReceived(Bitmap frame);
 
-    public class VncStream
+    public class VncImageStream
     {
         private readonly string _ipAddress;
 
@@ -32,7 +31,7 @@ namespace VncSharp
 
         private Bitmap LatestFrame { get; set; }
 
-        public VncStream(string ipAddress, ushort port = 5900, string password = "")
+        public VncImageStream(string ipAddress, ushort port = 5900, string password = "")
         {
             _ipAddress = ipAddress;
             _port = port;
@@ -55,18 +54,8 @@ namespace VncSharp
 
             AllocateFrameImage();
 
-            //_vncClient.VncUpdate += OnFrameUpdated;
             _vncClient.ImageUpdated += OnImageUpdated;
             _vncClient.StartUpdates();
-        }
-
-        private void OnImageUpdated(Bitmap latestframe)
-        {
-            LatestFrame = latestframe;
-
-            OnVncFrameReceived();
-
-            _vncClient.RequestScreenUpdate(false);
         }
 
         protected void OnVncFrameReceived()
@@ -78,34 +67,18 @@ namespace VncSharp
 
         private void AllocateFrameImage()
         {
-            if (FrameDimensions.Width < 100 || FrameDimensions.Height < 100)
+            if (FrameDimensions.Width < 100 || FrameDimensions.Height < 100) throw new InvalidOperationException("FrameDimension is invalid.");
 
-                throw new InvalidOperationException("FrameDimension is invalid.");
-                //LatestFrame = new Bitmap(1920, 1080, PixelFormat.Format32bppArgb);
-            else LatestFrame = new Bitmap(FrameDimensions.Width, FrameDimensions.Height, PixelFormat.Format32bppArgb);
+            LatestFrame = new Bitmap(FrameDimensions.Width, FrameDimensions.Height, PixelFormat.Format32bppArgb);
         }
 
-        private void OnFrameUpdated(object sender, VncEventArgs e)
+        private void OnImageUpdated(Bitmap latestframe)
         {
-            try
-            {
-                lock (_lockObject)
-                {
-                    foreach (var deskotpUpdate in e.DesktopUpdates.OrderBy(i => i.Order).ToList()) deskotpUpdate.Draw(LatestFrame);
+            LatestFrame = latestframe;
 
-                    OnVncFrameReceived();
-                }
-            }
-            catch (Exception ex)
-            {
-                var temp = ex.Message;
+            OnVncFrameReceived();
 
-                Console.WriteLine("Message = {0}", temp);
-            }
-            finally
-            {
-                _vncClient.RequestScreenUpdate(false);
-            }
+            _vncClient.RequestScreenUpdate(false);
         }
     }
 }
