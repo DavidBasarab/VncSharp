@@ -473,12 +473,12 @@ namespace VncSharp
         [DllImport("kernel32.dll")]
         private static extern bool Beep(int freq, int duration);
 #else
-		private bool Beep(int freq, int duration)	// bool just so it matches the Win32 API signature
-		{
-			// TODO: How to do this under Unix?
-			System.Console.Write("Beep!");
-			return true;
-		}
+        private bool Beep(int freq, int duration)	// bool just so it matches the Win32 API signature
+        {
+            // TODO: How to do this under Unix?
+            System.Console.Write("Beep!");
+            return true;
+        }
 #endif
 
         /// <summary>
